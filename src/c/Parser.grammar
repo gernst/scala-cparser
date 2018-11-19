@@ -1,0 +1,187 @@
+%package "c";
+%class "Parser";
+
+%embed     {:
+    Context context;
+:};
+
+%terminals VOID, CHAR, SHORT, INT, LONG, SIGNED, UNSIGNED;
+%terminals STRUCT, UNION, ENUM, TYPEDEF;
+
+%terminals RETURN, BREAK, CONTINUE;
+%terminals IF, ELSE, DO, WHILE, FOR;
+
+%terminals ID, TYPE;
+%terminals NUM;
+%terminals FIELD;
+
+%terminals LPAREN, RPAREN, LBRACK, RBRACK, LBRACE, RBRACE;
+%terminals POSTFIX, INCR, DECR, DOT, ARROW;
+%terminals PREFIX,  BANG, TILDE, SIZEOF;
+%terminals STAR, DIV, MOD;
+%terminals PLUS, MINUS;
+%terminals SHL, SHR;
+%terminals LT, LE, GE, GT;
+%terminals EQ, NEQ;
+%terminals AMP;
+%terminals CARET;
+%terminals PIPE;
+%terminals AND;
+%terminals OR;
+%terminals QUESTION, COLON;
+%terminals ASG, ASG_OP;
+%terminals COMMA, SEMICOLON;
+
+%left  POSTFIX, INCR, DECR, LPAREN, RPAREN, DOT, ARROW;
+%right PREFIX;
+%left  STAR, DIV, MOD;
+%left  PLUS, MINUS;
+%left  SHL, SHR;
+%left  LT, LE, GE, GT;
+%left  EQ, NEQ;
+%left  AMP;
+%left  CARET;
+%left  PIPE;
+%left  AND;
+%left  OR;
+%right QUESTION, COLON;
+%right ASG, ASG_OP;
+%left  COMMA;
+
+%nonassoc STMT; // unused
+
+%typeof ID    = "String";
+%typeof TYPE  = "String";
+
+%typeof NUM   = "Long";
+%typeof ASG_OP = "String";
+%typeof FIELD = "String";
+
+%typeof global = "Global";
+%typeof const  = "String";
+%typeof field  = "Field";
+%typeof param  = "Param";
+%typeof expr   = "Expr";
+%typeof type   = "Type";
+%typeof stmt   = "Stmt";
+%typeof block  = "Block";
+%typeof blockn = "Block";
+
+%goal unit;
+
+unit = global *;
+
+field = type.t ID.n SEMICOLON {: return new Field(t, n); :};
+fields = field *;
+
+param = type.t ID.n {: return new Param(t, n); :};
+params = param | params COMMA param;
+
+const = ID.n;
+consts = const | consts COMMA const;
+
+stmts  = stmt *;
+block0 = SEMICOLON @ STMT       {: return new Block(new Stmt[]{});  :};
+block1 = stmt.s SEMICOLON       {: return new Block(new Stmt[]{s}); :};
+block  = LBRACE stmts.ss RBRACE {: return new Block(ss); :};
+blockn = block0 | block1 | block;
+
+exprs = expr @ ASG | exprs COMMA expr;
+
+global
+    = TYPEDEF type.t ID.n SEMICOLON     {: return context.TypeDef(t, n);    :}
+    | type.t ID.n SEMICOLON             {: return context.VarDef(t, n);     :}
+    | type.t ID.n ASG expr.e SEMICOLON	{: return context.VarDef(t, n, e);  :}
+    | STRUCT  ID.n LBRACE fields.fs RBRACE SEMICOLON	{: return context.StructDef(n, fs); :}
+    | UNION   ID.n LBRACE fields.fs RBRACE SEMICOLON    {: return context.UnionDef(n, fs);  :}
+    | ENUM    ID.n LBRACE consts.cs RBRACE SEMICOLON    {: return context.EnumDef(n, cs);   :}
+    | type.t ID.n LPAREN RPAREN SEMICOLON 				{: return context.FunDef(t, n, new Param[]{}); :}
+    | type.t ID.n LPAREN params.ps RPAREN SEMICOLON 	{: return context.FunDef(t, n, ps); :}
+    | type.t ID.n LPAREN RPAREN block.b					{: return context.FunDef(t, n, new Param[]{}, b); :}
+    | type.t ID.n LPAREN params.ps RPAREN block.b  		{: return context.FunDef(t, n, ps, b); :}
+    ;
+
+stmt
+    = SEMICOLON
+    | expr.a   SEMICOLON                {: return new Atomic(a); :}
+    | RETURN   SEMICOLON                {: return Return.self(); :}
+    | RETURN expr.a SEMICOLON           {: return new Return(a); :}
+    | BREAK    SEMICOLON                {: return Break.self();  :}
+    | CONTINUE SEMICOLON                {: return Return.self(); :}
+    | type.t ID.n SEMICOLON             {: return new VarDef(t, n);     :}
+    | type.t ID.n ASG expr.e SEMICOLON  {: return new VarDef(t, n, e);  :}
+    | IF LPAREN expr.a RPAREN blockn.b  {: return new If(a, b);      :}
+    | IF LPAREN expr.a RPAREN blockn.b ELSE blockn.c	{: return new If(a, b, c);   :}
+    | WHILE LPAREN expr.a RPAREN blockn.b				{: return new While(a, b);   :}
+    | DO blockn.b WHILE LPAREN expr.a RPAREN SEMICOLON  {: return new DoWhile(b, a); :}
+    | FOR LPAREN expr.a SEMICOLON expr.b SEMICOLON expr.c SEMICOLON RPAREN blockn.p		{: return new For(a, b, c, p); :}
+    ;
+	
+expr
+    = PREFIX | POSTFIX /* unused */
+    | ID.n                              {: return new Id(n);  :}
+    | NUM.n                             {: return new Lit(n); :}
+    | expr.a INCR  @ POSTFIX            {: return new PostOp("++", a);  :}
+    | expr.a DECR  @ POSTFIX            {: return new PostOp("--", a);  :}
+    | expr.a LBRACK expr.i RBRACK       {: return new Index(a, i);      :}
+    | expr.a ARROW  FIELD.f             {: return new Lookup(a, f);     :}
+    | expr.a DOT    FIELD.f             {: return new Lookup(new PreOp("&", a), f); :} 
+    | INCR  expr.a @ PREFIX             {: return new PreOp("++", a);   :}
+    | DECR  expr.a @ PREFIX             {: return new PreOp("--", a);   :}
+    | PLUS  expr.a @ PREFIX             {: return new PreOp("+", a);    :}
+    | MINUS expr.a @ PREFIX             {: return new PreOp("-", a);    :}
+    | BANG  expr.a @ PREFIX             {: return new PreOp("!", a);    :}
+    | TILDE expr.a @ PREFIX             {: return new PreOp("~", a);    :}
+    | STAR  expr.a @ PREFIX             {: return new PreOp("*", a);    :}
+    | AMP   expr.a @ PREFIX             {: return new PreOp("&", a);    :}
+    | SIZEOF LPAREN expr.e RPAREN       {: return new SizeOfExpr(e);    :}
+    | expr.a STAR   expr.b              {: return new BinOp("*", a, b); :}
+    | expr.a DIV    expr.b              {: return new BinOp("/", a, b); :}
+    | expr.a MOD    expr.b              {: return new BinOp("%", a, b); :}
+    | expr.a PLUS   expr.b              {: return new BinOp("+", a, b); :}
+    | expr.a MINUS  expr.b              {: return new BinOp("-", a, b); :}
+    | expr.a SHL    expr.b              {: return new BinOp("<<",a, b); :}
+    | expr.a SHR    expr.b              {: return new BinOp(">>",a, b); :}
+    | expr.a LT     expr.b              {: return new BinOp("<", a, b); :}
+    | expr.a LE     expr.b              {: return new BinOp("<=",a, b); :}
+    | expr.a GE     expr.b              {: return new BinOp(">=",a, b); :}
+    | expr.a GT     expr.b              {: return new BinOp(">", a, b); :}
+    | expr.a EQ     expr.b              {: return new BinOp("==",a, b); :}
+    | expr.a NEQ    expr.b              {: return new BinOp("!=",a, b); :}
+    | expr.a AMP    expr.b              {: return new BinOp("&", a, b); :}
+    | expr.a CARET  expr.b              {: return new BinOp("^", a, b); :}
+    | expr.a PIPE   expr.b              {: return new BinOp("|", a, b); :}
+    | expr.a AND    expr.b              {: return new BinOp("&&",a, b); :}
+    | expr.a OR     expr.b              {: return new BinOp("||",a, b); :}
+    | expr.a ASG    expr.b              {: return new BinOp("=", a, b); :}
+    | expr.a ASG_OP.e  expr.b           {: return new BinOp(e, a, b);   :}
+    | expr.a COMMA  expr.b              {: return new BinOp(",", a, b); :}
+    | ID.n LPAREN RPAREN                {: return new FunCall(n, new Expr[]{}); :}
+    | ID.n LPAREN exprs.as RPAREN       {: return new FunCall(n, as);   :}
+    | LPAREN type.t RPAREN expr.a       {: return new Cast(t, a);       :}
+    | LPAREN expr.e RPAREN              {: return (Symbol) e;           :}
+    | expr.a QUESTION expr.b COLON expr.c	{: return new Question(a, b, c); :}
+    ;
+
+type
+    = VOID                              {: return (Symbol) Void.self();   :}
+    | SIGNED? CHAR                      {: return (Symbol) SChar.self();  :}
+    | SIGNED? SHORT                     {: return (Symbol) SShort.self(); :}
+    | SIGNED? INT                       {: return (Symbol) SInt.self();   :}
+    | SIGNED? LONG                      {: return (Symbol) SLong.self();  :}
+    | UNSIGNED CHAR                     {: return (Symbol) UChar.self();  :}
+    | UNSIGNED SHORT                    {: return (Symbol) UShort.self(); :}
+    | UNSIGNED INT?                     {: return (Symbol) UInt.self();   :}
+    | UNSIGNED LONG                     {: return (Symbol) ULong.self();  :}
+    | TYPE.t                            {: return new TypedefName(t);   :}
+    | type.t STAR                       {: return new PtrType(t);       :}
+ /* | type.t LBRACK RBRACK              {: return new PtrType(t);       :} */
+    | STRUCT ID.t                       {: return new StructName(t);    :}
+    | UNION  ID.t                       {: return new UnionName(t);     :}
+    | ENUM   ID.t                       {: return new EnumName(t);      :}
+    | STRUCT LBRACE fields.fs RBRACE    {: return new StructType(fs);   :}
+    | UNION  LBRACE fields.fs RBRACE    {: return new UnionType(fs);    :}
+    | ENUM   LBRACE consts.cs RBRACE    {: return new EnumType(cs);     :}
+    ;
+
+  

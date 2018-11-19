@@ -1,0 +1,21 @@
+<project name="beaver-c" default="generate">
+    <target name="jflextask" unless="jflex.available" description="creates JFlex Ant task">
+        <taskdef name="jflex" classname="jflex.anttask.JFlexTask" classpath="lib/jflex-1.6.1.jar"/>
+        <property name="jflex.available" value="yes"/>
+    </target>
+
+    <target name="beavertask" unless="beaver.available" description="creates Beaver Ant task">
+        <taskdef name="beaver" classname="beaver.comp.run.AntTask" classpath="lib/beaver-ant-0.9.11.jar"/>
+        <property name="beaver.available" value="yes"/>
+    </target>
+
+    <target name="scanner" depends="jflextask" description="generate scanner">
+        <jflex file="src/c/Scanner.flex" nobak="yes"/>
+    </target>
+
+    <target name="parser" depends="beavertask" description="generate parser">
+        <beaver file="src/c/Parser.grammar" terminalNames="no"/>
+    </target>
+
+    <target name="generate" depends="scanner,parser" description="generate all"/>
+</project>
